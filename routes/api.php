@@ -18,6 +18,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/conversations', [ConversationAPI::class, 'index']);
     Route::post('/conversations', [ConversationAPI::class, 'store']);
     Route::get('/conversations/{id}', [ConversationAPI::class, 'show']);
+    Route::get('/conversations/{id}/proactiveSchedule', [ConversationAPI::class, 'proactiveSchedule']);
 
     Route::post('/conversations/{id}/addMessage', [ConversationAPI::class, 'addMessage']);
 });

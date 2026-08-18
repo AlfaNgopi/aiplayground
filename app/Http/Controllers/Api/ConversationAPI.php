@@ -13,6 +13,7 @@ use App\Models\Message;
 use App\Models\Character;
 class ConversationAPI extends Controller
 {
+    
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
@@ -79,6 +80,20 @@ class ConversationAPI extends Controller
             'status' => 'success',
             'data' => $message,
             'conversation' => $conversation,
+        ], 200);
+    }
+
+    public function proactiveSchedule(Request $request, int $id): JsonResponse
+    {
+        $user = $request->user();
+
+        $conversation = $user->conversations()->findOrFail($id);
+
+        $proactiveSchedule = $conversation->proactiveSchedule()->latest()->first();
+
+        return response()->json([
+            'status' => 'success',
+            'data' => $proactiveSchedule,
         ], 200);
     }
 }

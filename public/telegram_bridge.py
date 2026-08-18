@@ -4,6 +4,7 @@ from telegram.ext import Application, MessageHandler, filters, ContextTypes, Com
 import requests
 import json
 import openaillm
+import datetime
 
 BOT_TOKEN = "8579550386:AAFrjNTRvVYTt78qisXsGWXH4B-87T1WUPM"
 CHAT_ID = "8620933222"
@@ -12,6 +13,19 @@ API_TOKEN = "1|PGcZYqt7yknOMvErnlGnsvaYpedkouMFW4OKfriS65770bbb"  # Replace with
 
 CURRENT_CONVERSATION_ID = 1  # Replace with the ID of the conversation you want to use
 
+def addMessage(role, content, message_type="text"):
+    responseAPI = requests.post(
+        f"{DOMAIN}/api/conversations/{CURRENT_CONVERSATION_ID}/addMessage",
+        headers={
+            "Authorization": f"Bearer {API_TOKEN}"
+        },
+        json={
+            "role": role,
+            "content": content,
+            "message_type": message_type
+        }
+    )
+    return responseAPI.json()
 
 async def newConversation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     responseAPI = requests.get(
@@ -44,8 +58,49 @@ async def newConversationWithChar(update: Update, context: ContextTypes.DEFAULT_
     global CURRENT_CONVERSATION_ID
     CURRENT_CONVERSATION_ID = responseAPI.json()['conversation']['id']
 
+def get_proactive_schedules():
+    responseAPI = requests.get(
+        f"{DOMAIN}/api/conversations/{CURRENT_CONVERSATION_ID}/proactiveSchedule",
+        headers={
+            "Authorization": f"Bearer {API_TOKEN}"
+        },
+    )
+    return responseAPI.json()["data"]
 
 
+async def proactive_job(context):
+    schedule = get_proactive_schedules() #only get the latest proactive schedule for the current conversation
+
+    # if current time is greater than or equal to scheduled_at and is_sent is false, send the message
+    if schedule and not schedule['is_sent']:
+        scheduled_time = datetime.datetime.fromisoformat(schedule['scheduled_at'])
+        current_time = datetime.datetime.now()
+
+        if current_time >= scheduled_time:
+            
+
+            # add the message to the conversation
+            responseAPI = addMessage(
+                role="system",
+                content=f"Current Time: {current_time}. Message: {schedule['message']}",
+                message_type="text"
+            )
+            conversation = responseAPI["conversation"]
+
+            # Ask the text model what to do
+            responseAI = openaillm.generate_response(conversation)
+
+            responseAPI = addMessage(
+                role="assistant",
+                content=responseAI.output_text,
+                message_type="text"
+            )
+
+            # sent the message to the user
+            await context.bot.send_message(
+                chat_id=CHAT_ID,
+                text=responseAI.output_text,
+            )
 
 # print any message received by the bot
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -53,19 +108,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     print(f"[USER]: {user_input}")
 
-    responseAPI = requests.post(
-        f"{DOMAIN}/api/conversations/{CURRENT_CONVERSATION_ID}/addMessage",
-        headers={
-            "Authorization": f"Bearer {API_TOKEN}"
-        },
-        json={
-            "role": "user",
-            "content": user_input,
-            "message_type": "text"
-        }
+    responseAPI = addMessage(
+        role="user",
+        content=user_input,
+        message_type="text"
     )
 
-    conversation = responseAPI.json()["conversation"]
+    conversation = responseAPI["conversation"]
 
     # print(f"conversation: {responseAPI.json()}")
     
@@ -76,16 +125,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     responseAI = openaillm.generate_response(conversation)
 
-    responseAPI = requests.post(
-        f"{DOMAIN}/api/conversations/{CURRENT_CONVERSATION_ID}/addMessage",
-        headers={
-            "Authorization": f"Bearer {API_TOKEN}"
-        },
-        json={
-            "role": "assistant",
-            "content": responseAI.output_text,
-            "message_type": "text"
-        }
+    responseAPI = addMessage(
+        role="assistant",
+        content=responseAI.output_text,
+        message_type="text"
     )
 
     # --------------------------------------------------
@@ -110,22 +153,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 image_path = openaillm.generate_image(conversation,prompt)
 
                 # Give result back to text model
-                responseAPI = requests.post(
-                    f"{DOMAIN}/api/conversations/{CURRENT_CONVERSATION_ID}/addMessage",
-                    headers={
-                        "Authorization": f"Bearer {API_TOKEN}"
-                    },
-                    json={
-                        "role": "system",
-                        "content": json.dumps({
-                            "success": True,
-                            "image_path": image_path,
-                        }),
-                        "message_type": "function_call_output"
-                    }
+                responseAPI = addMessage(
+                    role="system",
+                    content=json.dumps({
+                        "success": True,
+                        "image_path": image_path,
+                    }),
+                    message_type="function_call_output"
                 )
 
-                conversation = responseAPI.json()["conversation"]
+                conversation = responseAPI["conversation"]
                 
 
                 # use domain and url to send image to user
@@ -146,16 +183,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         final_response = openaillm.generate_response(conversation)
 
-        requests.post(
-            f"{DOMAIN}/api/conversations/{CURRENT_CONVERSATION_ID}/addMessage",
-            headers={
-                "Authorization": f"Bearer {API_TOKEN}"
-            },
-            json={
-                "role": "assistant",
-                "content": final_response.output_text,
-                "message_type": "text"
-            }
+        addMessage(
+            role="assistant",
+            content=final_response.output_text,
+            message_type="text"
         )
 
         print(f"[ASSISTANT]: {final_response.output_text}")
@@ -171,9 +202,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 app = Application.builder().token(BOT_TOKEN).build()
 
-# app.add_handler(MessageHandler(filters.ALL, handle_message))
-app.add_handler(CommandHandler("newconversation", newConversation))
-app.add_handler(CommandHandler("newconversationwithchar", newConversationWithChar))
+app.add_handler(MessageHandler(filters.ALL, handle_message))
+
+app.job_queue.run_repeating(
+    proactive_job,
+    interval=120,
+    first=60
+)
 
 print("Bot is running...")
 app.run_polling()

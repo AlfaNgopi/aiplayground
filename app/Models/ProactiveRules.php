@@ -31,7 +31,9 @@ class ProactiveRules extends Model
     ];
 
     protected $casts = [
-        
+        'enabled' => 'boolean',
+        'start_natural_trigger_time' => 'datetime',
+        'end_natural_trigger_time' => 'datetime',
         'last_triggered_at' => 'datetime',
     ];
 

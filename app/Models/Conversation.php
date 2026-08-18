@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use App\Models\ProactiveSchedule;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
@@ -39,5 +40,15 @@ class Conversation extends Model
     public function messages(): HasMany
     {
         return $this->hasMany(Message::class);
+    }
+
+    public function proactiveRules(): HasMany
+    {
+        return $this->hasMany(ProactiveRules::class);
+    }
+
+    public function proactiveSchedules(): HasMany
+    {
+        return $this->hasMany(ProactiveSchedule::class);
     }
 }

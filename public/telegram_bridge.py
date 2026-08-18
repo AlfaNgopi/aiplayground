@@ -1,0 +1,180 @@
+from telegram import Update
+from telegram import Bot
+from telegram.ext import Application, MessageHandler, filters, ContextTypes, CommandHandler
+import requests
+import json
+import openaillm
+
+BOT_TOKEN = "8579550386:AAFrjNTRvVYTt78qisXsGWXH4B-87T1WUPM"
+CHAT_ID = "8620933222"
+DOMAIN = "http://127.0.0.1:8000"
+API_TOKEN = "1|PGcZYqt7yknOMvErnlGnsvaYpedkouMFW4OKfriS65770bbb"  # Replace with
+
+CURRENT_CONVERSATION_ID = 1  # Replace with the ID of the conversation you want to use
+
+
+async def newConversation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    responseAPI = requests.get(
+        f"{DOMAIN}/api/characters",
+        headers={
+            "Authorization": f"Bearer {API_TOKEN}"
+        },
+        
+    )
+    characters = responseAPI.json()["data"]
+    await update.message.reply_text(f"Select Character id. Available characters: {', '.join([char['character_name'] for char in characters])}")
+
+async def newConversationWithChar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    responseAPI = requests.post(
+        f"{DOMAIN}/api/conversations",
+        headers={
+            "Authorization": f"Bearer {API_TOKEN}"
+        },
+        json={
+            "character_id": context.args[0] if context.args else None,
+            "timezone": "Asia/Jakarta",
+            "locale": "id",
+            "channel": "telegram",
+            "title": f"Telegram Conversation with Character {context.args[0] if context.args else 'None'}",
+        }
+        
+    )
+    await update.message.reply_text(f"New conversation created with Character id: {context.args[0] if context.args else 'None'}. Conversation ID: {responseAPI.json()['conversation']['id']}")
+
+    global CURRENT_CONVERSATION_ID
+    CURRENT_CONVERSATION_ID = responseAPI.json()['conversation']['id']
+
+
+
+
+# print any message received by the bot
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_input = update.message.text
+
+    print(f"[USER]: {user_input}")
+
+    responseAPI = requests.post(
+        f"{DOMAIN}/api/conversations/{CURRENT_CONVERSATION_ID}/addMessage",
+        headers={
+            "Authorization": f"Bearer {API_TOKEN}"
+        },
+        json={
+            "role": "user",
+            "content": user_input,
+            "message_type": "text"
+        }
+    )
+
+    conversation = responseAPI.json()["conversation"]
+
+    # print(f"conversation: {responseAPI.json()}")
+    
+
+    # --------------------------------------------------
+    # Ask the text model what to do
+    # --------------------------------------------------
+
+    responseAI = openaillm.generate_response(conversation)
+
+    responseAPI = requests.post(
+        f"{DOMAIN}/api/conversations/{CURRENT_CONVERSATION_ID}/addMessage",
+        headers={
+            "Authorization": f"Bearer {API_TOKEN}"
+        },
+        json={
+            "role": "assistant",
+            "content": responseAI.output_text,
+            "message_type": "text"
+        }
+    )
+
+    # --------------------------------------------------
+    # Process tool calls
+    # --------------------------------------------------
+
+    tool_was_called = False
+
+    for item in responseAI.output:
+
+        if item.type == "function_call":
+
+            tool_was_called = True
+
+            if item.name == "generate_image":
+
+                arguments = json.loads(item.arguments)
+
+                prompt = arguments["prompt"]
+
+                # Execute our Python function
+                image_path = openaillm.generate_image(conversation,prompt)
+
+                # Give result back to text model
+                responseAPI = requests.post(
+                    f"{DOMAIN}/api/conversations/{CURRENT_CONVERSATION_ID}/addMessage",
+                    headers={
+                        "Authorization": f"Bearer {API_TOKEN}"
+                    },
+                    json={
+                        "role": "system",
+                        "content": json.dumps({
+                            "success": True,
+                            "image_path": image_path,
+                        }),
+                        "message_type": "function_call_output"
+                    }
+                )
+
+                conversation = responseAPI.json()["conversation"]
+                
+
+                # use domain and url to send image to user
+                with open(image_path, "rb") as f:
+                    await update.message.reply_photo(
+                        photo=f,
+                        read_timeout=60,
+                        write_timeout=60,
+                        connect_timeout=60,
+                        pool_timeout=60,
+                        )
+
+    # --------------------------------------------------
+    # If a tool was called, ask the text model again
+    # --------------------------------------------------
+
+    if tool_was_called:
+
+        final_response = openaillm.generate_response(conversation)
+
+        requests.post(
+            f"{DOMAIN}/api/conversations/{CURRENT_CONVERSATION_ID}/addMessage",
+            headers={
+                "Authorization": f"Bearer {API_TOKEN}"
+            },
+            json={
+                "role": "assistant",
+                "content": final_response.output_text,
+                "message_type": "text"
+            }
+        )
+
+        print(f"[ASSISTANT]: {final_response.output_text}")
+
+        await update.message.reply_text(final_response.output_text)
+
+    else:
+
+        print(f"[ASSISTANT]: {responseAI.output_text}")
+
+        await update.message.reply_text(responseAI.output_text)
+
+
+app = Application.builder().token(BOT_TOKEN).build()
+
+# app.add_handler(MessageHandler(filters.ALL, handle_message))
+app.add_handler(CommandHandler("newconversation", newConversation))
+app.add_handler(CommandHandler("newconversationwithchar", newConversationWithChar))
+
+print("Bot is running...")
+app.run_polling()
+

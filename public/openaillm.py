@@ -1,0 +1,100 @@
+from openai import OpenAI
+import base64
+import json
+import os
+
+client = OpenAI()
+
+tools = [
+    {
+        "type": "function",
+        "name": "generate_image",
+        "description": (
+            "Generate an image using an image generation model. "
+            "Use this when the user explicitly asks to create, "
+            "draw, generate, or visualize an image."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "prompt": {
+                    "type": "string",
+                    "description": "A detailed prompt describing the image to generate."
+                }
+            },
+            "required": ["prompt"],
+            "additionalProperties": False,
+        },
+        "strict": True,
+    }
+]
+
+# --------------------------------------------------
+# Image generation function
+# --------------------------------------------------
+
+def generate_image(conversation, prompt: str) -> str:
+    print(f"[AI]: Generating image with prompt: {prompt}...")
+
+
+    character = conversation['character']
+    character_concept = character['concept']
+    # character concept is a image that represents the character, we will use it as a base image for the image generation model
+    image_path = f'storage/{character_concept}'
+
+    result = client.images.edit(
+        image=open(image_path, "rb"),
+        model="gpt-image-2",
+        prompt=prompt,
+        size="auto",
+    )
+
+    image_bytes = base64.b64decode(result.data[0].b64_json)
+
+    # Create output directory
+    os.makedirs("images", exist_ok=True)
+
+    # Give each image a unique filename
+    filename = f"images/image_{len(os.listdir('images')) + 1}.png"
+
+    with open(filename, "wb") as f:
+        f.write(image_bytes)
+
+    print(f"✅ Image saved: {filename}")
+
+    return filename
+
+def generate_response(conversation):
+
+    character = conversation['character']
+    model = character['ai_model']
+
+    messages = []
+
+    messages.append({
+        "role": "system",
+        "content": character['system_prompt']
+    })
+
+    for message in conversation['messages']:
+        messages.append({
+            "role": message['role'],
+            "content": message['content']
+        })
+
+    print(f"[AI]: Generating response with model: {model}...")
+
+    response = client.responses.create(
+        model=model,
+        input=messages,
+        tools=tools,
+        service_tier="flex",
+    )
+    return response
+
+
+# --------------------------------------------------
+# Tools available to the text model
+# --------------------------------------------------
+
+

@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from openai import OpenAI
 import base64
 import json
@@ -34,7 +36,7 @@ tools = [
                     )
                 },
             },
-            "required": ["prompt"],
+            "required": ["prompt", "use_character_reference"],
             "additionalProperties": False,
         },
         "strict": True,
@@ -46,16 +48,17 @@ tools = [
 # --------------------------------------------------
 
 def generate_image(conversation, prompt: str, use_character_reference: bool = False) -> str:
-    print(f"[AI]: Generating image with prompt: {prompt}...")
+    print(f"[AI]: Generating image {'with character reference' if use_character_reference else 'without character reference'} with prompt: {prompt[:50]}...")
 
 
     character = conversation['character']
-    character_concept = character['concept']
+    character_concept = character['character_concept']
     # character concept is a image that represents the character, we will use it as a base image for the image generation model
-    image_path = f'storage/{character_concept}'
+    # image_path = f'storage/{character_concept}'
+    image_path = f"images/character.png"
 
-    if use_character_reference:
-        image_path = f"storage/{character_concept}"
+    if True:  # use_character_reference:
+        
 
         result = client.images.edit(
             image=open(image_path, "rb"),
@@ -111,9 +114,40 @@ def generate_response(conversation):
         tools=tools,
         service_tier="flex",
     )
+    print(f"[AI]: Response generated: {response.output_text[:50]}...")
     return response
 
+def generate_proactive_message(conversation, proactive_prompt):
+    character = conversation['character']
+    model = character['ai_model']
 
+    messages = []
+
+    messages.append({
+        "role": "system",
+        "content": character['system_prompt']
+    })
+
+    for message in conversation['messages']:
+        messages.append({
+            "role": message['role'],
+            "content": message['content']
+        })
+
+    messages.append({
+        "role": "system",
+        "content": f"current Time: {datetime.now(timezone.utc).isoformat()}\n {proactive_prompt}"
+    })
+
+    print(f"[AI]: Generating proactive message with model: {model}...")
+
+    response = client.responses.create(
+        model=model,
+        input=messages,
+        tools=tools,
+        service_tier="flex",
+    )
+    return response
 # --------------------------------------------------
 # Tools available to the text model
 # --------------------------------------------------

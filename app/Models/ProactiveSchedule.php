@@ -13,13 +13,11 @@ class ProactiveSchedule extends Model
         'conversation_id',
         'scheduled_at',
         'message',
-        'with_image',
         'is_sent',
     ];
 
     protected $casts = [
         'scheduled_at' => 'datetime',
-        'with_image' => 'boolean',
         'is_sent' => 'boolean',
     ];
 

@@ -1,15 +1,17 @@
+from zoneinfo import ZoneInfo
+
 from telegram import Update
 from telegram import Bot
 from telegram.ext import Application, MessageHandler, filters, ContextTypes, CommandHandler
 import requests
 import json
 import openaillm
-import datetime
+from datetime import datetime, timezone
 
 BOT_TOKEN = "8579550386:AAFrjNTRvVYTt78qisXsGWXH4B-87T1WUPM"
 CHAT_ID = "8620933222"
 DOMAIN = "http://127.0.0.1:8000"
-API_TOKEN = "1|PGcZYqt7yknOMvErnlGnsvaYpedkouMFW4OKfriS65770bbb"  # Replace with
+API_TOKEN = "1|tEbmxxa9WCur7z6U3m0zBfOlyUcx8ebplAHeIWGe36e7e755"  # Replace with
 
 CURRENT_CONVERSATION_ID = 1  # Replace with the ID of the conversation you want to use
 
@@ -69,26 +71,34 @@ def get_proactive_schedules():
 
 
 async def proactive_job(context):
-    schedule = get_proactive_schedules() #only get the latest proactive schedule for the current conversation
+    print("[SYSTEM] Checking for proactive messages...")
 
-    # if current time is greater than or equal to scheduled_at and is_sent is false, send the message
+    schedule = get_proactive_schedules()
+
     if schedule and not schedule['is_sent']:
-        scheduled_time = datetime.datetime.fromisoformat(schedule['scheduled_at'])
-        current_time = datetime.datetime.now()
+        scheduled_time = datetime.fromisoformat(
+            schedule['scheduled_at'].replace("Z", "+00:00")
+        )
+
+        current_time = datetime.now(timezone.utc)
+
+        print(f"Scheduled: {scheduled_time}")
+        print(f"Current:   {current_time}")
 
         if current_time >= scheduled_time:
-            
+            print("[SYSTEM] Proactive message is due!")
 
             # add the message to the conversation
-            responseAPI = addMessage(
-                role="system",
-                content=f"Current Time: {current_time}. Message: {schedule['message']}",
-                message_type="text"
+            responseAPI = requests.get(
+                f"{DOMAIN}/api/conversations/{CURRENT_CONVERSATION_ID}",
+                headers={
+                    "Authorization": f"Bearer {API_TOKEN}"
+                },
             )
-            conversation = responseAPI["conversation"]
+            conversation = responseAPI.json()["data"]
 
             # Ask the text model what to do
-            responseAI = openaillm.generate_response(conversation)
+            responseAI = openaillm.generate_proactive_message(conversation, schedule['message'])
 
             responseAPI = addMessage(
                 role="assistant",
@@ -125,11 +135,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     responseAI = openaillm.generate_response(conversation)
 
-    responseAPI = addMessage(
-        role="assistant",
-        content=responseAI.output_text,
-        message_type="text"
-    )
+    
 
     # --------------------------------------------------
     # Process tool calls
@@ -155,10 +161,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 # Give result back to text model
                 responseAPI = addMessage(
                     role="system",
-                    content=json.dumps({
-                        "success": True,
-                        "image_path": image_path,
-                    }),
+                    content="Image Successfully generated",
                     message_type="function_call_output"
                 )
 
@@ -183,19 +186,23 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         final_response = openaillm.generate_response(conversation)
 
-        addMessage(
+        responseAPI = addMessage(
             role="assistant",
             content=final_response.output_text,
             message_type="text"
         )
 
-        print(f"[ASSISTANT]: {final_response.output_text}")
 
         await update.message.reply_text(final_response.output_text)
 
     else:
 
-        print(f"[ASSISTANT]: {responseAI.output_text}")
+        responseAPI = addMessage(
+                role="assistant",
+                content=responseAI.output_text,
+                message_type="text"
+            )
+
 
         await update.message.reply_text(responseAI.output_text)
 
@@ -206,8 +213,8 @@ app.add_handler(MessageHandler(filters.ALL, handle_message))
 
 app.job_queue.run_repeating(
     proactive_job,
-    interval=120,
-    first=60
+    interval=30,
+    first=5
 )
 
 print("Bot is running...")

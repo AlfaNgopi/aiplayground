@@ -50,6 +50,7 @@ tools = [
 def generate_image(conversation, prompt: str, use_character_reference: bool = False) -> str:
     print(f"[AI]: Generating image {'with character reference' if use_character_reference else 'without character reference'} with prompt: {prompt[:50]}...")
 
+    prompt = f"Anime Style, Keep it Simple. {prompt}"
 
     character = conversation['character']
     character_concept = character['character_concept']
@@ -57,7 +58,7 @@ def generate_image(conversation, prompt: str, use_character_reference: bool = Fa
     # image_path = f'storage/{character_concept}'
     image_path = f"images/character.png"
 
-    if True:  # use_character_reference:
+    if use_character_reference: 
         
 
         result = client.images.edit(

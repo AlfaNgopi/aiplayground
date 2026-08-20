@@ -154,9 +154,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 arguments = json.loads(item.arguments)
 
                 prompt = arguments["prompt"]
+                use_character_reference = arguments.get("use_character_reference", False)
 
                 # Execute our Python function
-                image_path = openaillm.generate_image(conversation,prompt)
+                image_path = openaillm.generate_image(conversation, prompt, use_character_reference=use_character_reference)
 
                 # Give result back to text model
                 responseAPI = addMessage(
